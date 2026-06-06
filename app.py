@@ -382,4 +382,4 @@ Paper refs: [Differential Attention](https://arxiv.org/abs/2410.05258) ·
 
 if __name__ == "__main__":
     demo = build_ui()
-    demo.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())
+    demo.launch(server_name="0.0.0.0", server_port=7860)
