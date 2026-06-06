@@ -102,24 +102,32 @@ def _load_models(checkpoint_path: str, device: str):
 
     ckpt = Path(checkpoint_path)
     if checkpoint_path and ckpt.is_file():
-        state = torch.load(checkpoint_path, map_location=device, weights_only=True)
-        _maybe_load(encoder, state, "encoder")
-        _maybe_load(vqa_head, state, "vqa")
-        _maybe_load(cap_head, state, "captioning")
-        _maybe_load(det_head, state, "detection")
+        state = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        # Trainer saves {"model_state_dict": {...}, "epoch": ..., ...}
+        model_state = state.get("model_state_dict", state)
+
+        # Encoder weights: keys prefixed "encoder." (Phase 3) or bare (Phase 1/2)
+        enc_state = {k[8:]: v for k, v in model_state.items() if k.startswith("encoder.")}
+        if enc_state:
+            encoder.load_state_dict(enc_state, strict=False)
+        else:
+            # Phase 1/2 checkpoint — bare encoder keys via "0." prefix or direct
+            enc_state2 = {k[2:] if k.startswith("0.") else k: v
+                          for k, v in model_state.items()
+                          if not k.startswith("1.")}
+            encoder.load_state_dict(enc_state2, strict=False)
+
+        # Task-head weights: keys prefixed "head."
+        head_state = {k[5:]: v for k, v in model_state.items() if k.startswith("head.")}
+        if head_state:
+            vqa_head.load_state_dict(head_state, strict=False)
+            cap_head.load_state_dict(head_state, strict=False)
+            det_head.load_state_dict(head_state, strict=False)
 
     _cache.update({"key": key, "encoder": encoder, "vqa": vqa_head,
                    "cap": cap_head, "det": det_head})
     return encoder, vqa_head, cap_head, det_head
 
-
-def _maybe_load(model: torch.nn.Module, state: dict, section: str) -> None:
-    if isinstance(state, dict) and section in state:
-        model.load_state_dict(state[section], strict=False)
-    elif isinstance(state, dict) and not any(
-        k in state for k in ("encoder", "vqa", "captioning", "detection")
-    ):
-        model.load_state_dict(state, strict=False)
 
 
 def _tokenizer():
