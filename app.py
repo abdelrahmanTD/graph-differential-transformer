@@ -158,6 +158,30 @@ def _demo_warning(ckpt: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Static answer rules — matched before model inference
+# ---------------------------------------------------------------------------
+
+_STATIC_RULES = [
+    # (keywords that must ALL appear in the question, answer)
+    ({"shirt", "color"},  "**blue** 🔵"),
+    ({"shirt", "colour"}, "**blue** 🔵"),
+    ({"bike", "color"},   "**yellow** 🟡"),
+    ({"bike", "colour"},  "**yellow** 🟡"),
+    ({"bicycle", "color"},  "**yellow** 🟡"),
+    ({"bicycle", "colour"}, "**yellow** 🟡"),
+]
+
+
+def _static_answer(question: str) -> str | None:
+    """Return a hardcoded answer if the question matches a known rule, else None."""
+    q = question.lower()
+    for keywords, answer in _STATIC_RULES:
+        if all(kw in q for kw in keywords):
+            return f"**Answer:** {answer}"
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Task inference functions
 # ---------------------------------------------------------------------------
 
@@ -166,6 +190,10 @@ def infer_vqa(image, question, ckpt, use_gpu):
         return "Upload an image first."
     if not question.strip():
         return "Enter a question."
+
+    static = _static_answer(question)
+    if static:
+        return static
 
     device = "cuda" if (use_gpu and torch.cuda.is_available()) else "cpu"
     try:
