@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "gdt"
+version = "0.1.0"
+description = "Graph-Differential Transformer: A Unified Multimodal Architecture for Vision-Language Tasks"
+requires-python = ">=3.9"
+dependencies = [
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
+    "numpy>=1.24.0",
+    "pillow>=10.0.0",
+    "pyyaml>=6.0",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+eval = [
+    "pycocotools>=2.0.6",
+    "pycocoevalcap>=1.2",
+    "scipy>=1.11.0",
+]
+train = [
+    "tensorboard>=2.14.0",
+]
+
+[project.scripts]
+gdt-train = "gdt.scripts.train:main"
+gdt-evaluate = "gdt.scripts.evaluate:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gdt*"]
