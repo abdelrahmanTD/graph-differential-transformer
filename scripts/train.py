@@ -12,7 +12,20 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import types
+
+# Bootstrap: make project root importable as "gdt"
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+if "gdt" not in sys.modules:
+    _pkg = types.ModuleType("gdt")
+    _pkg.__path__ = [_ROOT]          # type: ignore[assignment]
+    _pkg.__package__ = "gdt"
+    _pkg.__file__ = os.path.join(_ROOT, "__init__.py")
+    sys.modules["gdt"] = _pkg
 
 import torch
 
