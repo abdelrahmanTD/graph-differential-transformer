@@ -97,7 +97,9 @@ def _dummy_loader(cfg, batch_size: int = 4):
 def _run_phase1(cfg, args) -> None:
     from gdt.training.phase1_pretrain import run_phase1
 
+    cfg.run.checkpoint_dir = "checkpoints/phase1"
     print("Starting Phase 1 pre-training...")
+    print(f"Checkpoints will be saved to: {cfg.run.checkpoint_dir}")
     train_loader = _dummy_loader(cfg, cfg.training.batch_size)
     run_phase1(cfg, train_loader, resume_from=args.resume)
 
@@ -105,7 +107,9 @@ def _run_phase1(cfg, args) -> None:
 def _run_phase2(cfg, args) -> None:
     from gdt.training.phase2_graph import run_phase2
 
+    cfg.run.checkpoint_dir = "checkpoints/phase2"
     print("Starting Phase 2 graph integration...")
+    print(f"Checkpoints will be saved to: {cfg.run.checkpoint_dir}")
     train_loader = _dummy_loader(cfg, cfg.training.batch_size)
     run_phase2(cfg, train_loader, phase1_checkpoint=args.resume)
 
@@ -114,6 +118,9 @@ def _run_phase3(cfg, args) -> None:
     from gdt.training.phase3_finetune import run_a_vqa, run_b_captioning, run_c_detection
     import torch
     from torch.utils.data import DataLoader, TensorDataset
+
+    cfg.run.checkpoint_dir = f"checkpoints/phase3_{args.run}"
+    print(f"Checkpoints will be saved to: {cfg.run.checkpoint_dir}")
 
     B, Lt = 8, 16
     img = torch.randn(B, 3, cfg.model.img_size, cfg.model.img_size)
