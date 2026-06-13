@@ -107,6 +107,16 @@ def _load_models(checkpoint_path: str, device: str):
         _maybe_load(vqa_head, state, "vqa")
         _maybe_load(cap_head, state, "captioning")
         _maybe_load(det_head, state, "detection")
+    else:
+        # No checkpoint — initialize encoder from BERT + ViT pretrained weights
+        # so outputs are grounded in real representations rather than pure noise.
+        try:
+            from gdt.models.pretrained_init import load_pretrained_weights
+            encoder.cpu()
+            load_pretrained_weights(encoder)
+            encoder.to(device)
+        except Exception as e:
+            print(f"Pretrained init skipped ({e}). Using random weights.")
 
     _cache.update({"key": key, "encoder": encoder, "vqa": vqa_head,
                    "cap": cap_head, "det": det_head})
@@ -174,20 +184,18 @@ def infer_vqa(image, question, ckpt, use_gpu):
         logits = vqa_head(cls)
         probs = torch.softmax(logits, dim=-1)[0]
 
+    from gdt.data.vqa_answers import get_answer
     top5_p, top5_i = probs.topk(5)
     lines = [
         f"**Question:** {question}\n",
-        "| Rank | Answer ID | Confidence |",
-        "|:----:|:---------:|:----------:|",
+        "| Rank | Answer | Confidence |",
+        "|:----:|:------:|:----------:|",
     ]
     for rank, (idx, p) in enumerate(zip(top5_i.tolist(), top5_p.tolist()), 1):
         bar = "▓" * max(1, int(p * 15))
-        lines.append(f"| **{rank}** | `#{idx}` | {p * 100:.1f}% {bar} |")
+        answer = get_answer(idx)
+        lines.append(f"| **{rank}** | {answer} | {p * 100:.1f}% {bar} |")
 
-    lines.append(
-        "\n*Answer IDs map to the VQA v2 answer vocabulary. "
-        "Load a checkpoint trained on VQA v2 for meaningful answers.*"
-    )
     return "\n".join(lines) + _demo_warning(ckpt or "")
 
 
@@ -207,7 +215,9 @@ def infer_caption(image, ckpt, use_gpu):
 
     with torch.no_grad():
         enc_out = encoder(img, ids, attention_mask=mask)
-        token_ids = cap_head.generate(enc_out, max_new_tokens=40, beam_size=3)
+        token_ids = cap_head.generate(
+            enc_out, max_new_tokens=40, beam_size=3, min_new_tokens=8
+        )
 
     caption = tok.decode(token_ids[0], skip_special_tokens=True).strip()
     result = f'**Caption:**\n\n> *"{caption or "(no tokens generated)"}"*'
@@ -234,7 +244,17 @@ def infer_detection(image, threshold, ckpt, use_gpu):
 
     probs = pred_logits[0].softmax(-1)           # [N, C+1]
     scores, labels = probs[:, :-1].max(-1)       # exclude no-object class
-    keep = scores > float(threshold)
+    # In demo mode (no checkpoint) scores are ~1/num_classes — lower threshold
+    # automatically so we always show at least a few detections
+    has_ckpt = bool(ckpt and Path(ckpt).is_file())
+    effective_threshold = float(threshold) if has_ckpt else min(float(threshold), scores.max().item() * 0.5)
+    keep = scores > effective_threshold
+    # Cap at top-10 to avoid flooding the UI
+    if keep.sum() > 10:
+        top_idx = scores.topk(10).indices
+        mask_new = torch.zeros_like(keep)
+        mask_new[top_idx] = True
+        keep = mask_new
 
     scores_k = scores[keep].cpu().numpy()
     labels_k = labels[keep].cpu().numpy().astype(int)

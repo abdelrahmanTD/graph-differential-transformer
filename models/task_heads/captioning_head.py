@@ -82,13 +82,15 @@ class CaptioningHead(nn.Module):
         encoder_out: Tensor,
         max_new_tokens: int = 50,
         beam_size: int = 5,
+        min_new_tokens: int = 5,
     ) -> list[list[int]]:
         """
         Beam-search generation.
 
-        @param encoder_out   - [B, Tm, D]
-        @param max_new_tokens - maximum tokens to generate
-        @param beam_size     - beam width
+        @param encoder_out    - [B, Tm, D]
+        @param max_new_tokens  - maximum tokens to generate
+        @param beam_size      - beam width
+        @param min_new_tokens  - suppress EOS until at least this many tokens
         @returns list of token-id lists (one per batch item, BOS stripped)
         """
         return self.decoder.generate(
@@ -97,4 +99,5 @@ class CaptioningHead(nn.Module):
             eos_id=self.eos_id,
             max_new_tokens=max_new_tokens,
             beam_size=beam_size,
+            min_new_tokens=min_new_tokens,
         )

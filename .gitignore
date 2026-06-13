@@ -7,6 +7,13 @@ build/
 .eggs/
 checkpoints/
 runs/
-data/
+# Ignore raw dataset files but not Python source modules in data/
+data/**/*.json
+data/**/*.zip
+data/**/*.tar
+data/**/*.gz
+data/coco/
+data/vqa/*.json
+data/visual_genome/
 *.pt
 *.ckpt

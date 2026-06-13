@@ -134,15 +134,17 @@ class GDTDecoder(nn.Module):
         eos_id: int,
         max_new_tokens: int = 50,
         beam_size: int = 5,
+        min_new_tokens: int = 5,
     ) -> list[list[int]]:
         """
         Beam-search caption generation.
 
-        @param encoder_out   - [B, Tm, D]
-        @param bos_id        - begin-of-sequence token id
-        @param eos_id        - end-of-sequence token id
-        @param max_new_tokens - maximum tokens to generate
-        @param beam_size     - beam width
+        @param encoder_out    - [B, Tm, D]
+        @param bos_id         - begin-of-sequence token id
+        @param eos_id         - end-of-sequence token id
+        @param max_new_tokens  - maximum tokens to generate
+        @param beam_size      - beam width
+        @param min_new_tokens  - suppress EOS until at least this many tokens
         @returns list of token-id lists, one per batch item
         """
         B = encoder_out.shape[0]
@@ -155,7 +157,7 @@ class GDTDecoder(nn.Module):
             beams = [(0.0, [bos_id])]
             completed = []
 
-            for _ in range(max_new_tokens):
+            for step in range(max_new_tokens):
                 candidates = []
                 for score, tokens in beams:
                     if tokens[-1] == eos_id:
@@ -164,6 +166,16 @@ class GDTDecoder(nn.Module):
                     ids = torch.tensor([tokens], device=device)
                     logits = self.forward(ids, mem)[:, -1, :]   # [1, V]
                     log_probs = F.log_softmax(logits, dim=-1)[0]
+                    # Always suppress BERT special tokens except EOS so that
+                    # the decoder generates real subword tokens even with random weights.
+                    # Special: [PAD]=0, [UNK]=100, [CLS]=101, [MASK]=103
+                    for _special in (0, 100, bos_id, 103):
+                        if _special != eos_id:
+                            log_probs[_special] = float("-inf")
+                    # Suppress EOS until min_new_tokens generated
+                    new_tokens_so_far = len(tokens) - 1  # exclude BOS
+                    if new_tokens_so_far < min_new_tokens:
+                        log_probs[eos_id] = float("-inf")
                     top_lp, top_ids = log_probs.topk(beam_size)
                     for lp, tid in zip(top_lp.tolist(), top_ids.tolist()):
                         candidates.append((score + lp, tokens + [tid]))

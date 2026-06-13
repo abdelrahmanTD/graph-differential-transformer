@@ -12,7 +12,22 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import types
+
+# Bootstrap: register the project root as the "gdt" namespace package so that
+# all internal `from gdt.X import Y` imports resolve correctly when running
+# this script directly (mirrors the same trick used in app.py).
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+if "gdt" not in sys.modules:
+    _gdt_mod = types.ModuleType("gdt")
+    _gdt_mod.__path__ = [_PROJECT_ROOT]  # type: ignore[assignment]
+    _gdt_mod.__package__ = "gdt"
+    _gdt_mod.__file__ = os.path.join(_PROJECT_ROOT, "__init__.py")
+    sys.modules["gdt"] = _gdt_mod
 
 import torch
 
@@ -97,6 +112,51 @@ def _run_phase2(cfg, args) -> None:
     run_phase2(cfg, train_loader, phase1_checkpoint=args.resume)
 
 
+def _vqa_loader(cfg, args):
+    """Return a DataLoader for VQA training. Uses real data when available, dummy otherwise."""
+    import os
+    from torch.utils.data import DataLoader
+
+    data_root = cfg.run.data_root
+    ann_path = os.path.join(data_root, cfg.run.vqa_ann_path)
+    q_path = os.path.join(data_root, cfg.run.vqa_q_path)
+    image_dir = os.path.join(data_root, "coco", "train2014")
+
+    if os.path.exists(ann_path) and os.path.exists(q_path) and os.path.isdir(image_dir):
+        print(f"  Loading real VQA v2 data from {data_root}")
+        from gdt.data.vqa_dataset import VQADataset, build_bert_tokenizer
+        tokenizer = build_bert_tokenizer(cfg.model.vocab_size)
+        dataset = VQADataset(
+            ann_path=ann_path,
+            q_path=q_path,
+            image_dir=image_dir,
+            tokenizer=tokenizer,
+            num_answers=cfg.run.num_vqa_answers,
+            split="train",
+        )
+        return DataLoader(
+            dataset,
+            batch_size=cfg.training.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            pin_memory=True,
+        )
+
+    print("  VQA data not found — using synthetic dummy data for smoke-testing.")
+    print(f"  To train for real, download VQA v2 + COCO to: {data_root}")
+    B, Lt = 8, 16
+    img = torch.randn(B, 3, cfg.model.img_size, cfg.model.img_size)
+    tid = torch.randint(0, cfg.model.vocab_size, (B, Lt))
+    scores = torch.rand(B, cfg.run.num_vqa_answers)
+
+    class _DummyVQA(torch.utils.data.Dataset):
+        def __len__(self): return B
+        def __getitem__(self, i):
+            return {"images": img[i], "text_ids": tid[i], "answer_scores": scores[i]}
+
+    return torch.utils.data.DataLoader(_DummyVQA(), batch_size=4)
+
+
 def _run_phase3(cfg, args) -> None:
     from gdt.training.phase3_finetune import run_a_vqa, run_b_captioning, run_c_detection
     import torch
@@ -108,17 +168,7 @@ def _run_phase3(cfg, args) -> None:
 
     if args.run == "a":
         print("Starting Run A (VQA)...")
-        scores = torch.rand(B, cfg.run.num_vqa_answers)
-
-        class VQADs(torch.utils.data.Dataset):
-            def __len__(self): return B
-            def __getitem__(self, i):
-                return {
-                    "images": img[i], "text_ids": tid[i],
-                    "answer_scores": scores[i],
-                }
-
-        loader = DataLoader(VQADs(), batch_size=4)
+        loader = _vqa_loader(cfg, args)
         run_a_vqa(cfg, loader, phase2_checkpoint=args.resume)
 
     elif args.run == "b":
